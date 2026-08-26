@@ -1,11 +1,16 @@
+import sqlite3
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+
 
 app = FastAPI(
     title="Task API",
     description="A simple CRUD API for managing a to-do list.",
     version="1.0"
 )
+
+DATABASE_NAME = "tasks.db"
 
 
 class TaskCreate(BaseModel):
@@ -17,24 +22,49 @@ class TaskUpdate(BaseModel):
     done: bool | None = None
 
 
-# In-memory task list
-tasks = [
-    {
-        "id": 1,
-        "title": "Do the laundry.",
-        "done": False
-    },
-    {
-        "id": 2,
-        "title": "Write my CCNA exam.",
-        "done": False
-    },
-    {
-        "id": 3,
-        "title": "Enroll to FlyRank internship.",
-        "done": True
-    }
-]
+def get_connection():
+    """Create and return a connection to the SQLite database."""
+    connection = sqlite3.connect(DATABASE_NAME)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def initialize_database():
+    """Create the tasks table and seed example tasks only when empty."""
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY,
+            title TEXT NOT NULL,
+            done BOOLEAN NOT NULL DEFAULT 0
+        )
+        """
+    )
+
+    cursor.execute("SELECT COUNT(*) AS count FROM tasks")
+    task_count = cursor.fetchone()["count"]
+
+    if task_count == 0:
+        example_tasks = [
+            ("Do the laundry.", False),
+            ("Write my CCNA exam.", False),
+            ("Enroll to FlyRank internship.", True),
+        ]
+
+        cursor.executemany(
+            "INSERT INTO tasks (title, done) VALUES (?, ?)",
+            example_tasks
+        )
+
+    connection.commit()
+    connection.close()
+
+
+# Run database setup when the application starts.
+initialize_database()
 
 
 @app.get(
@@ -62,10 +92,10 @@ def health_check():
 @app.get(
     "/tasks",
     summary="Get all tasks",
-    description="Returns all tasks currently stored in memory."
+    description="Returns all tasks currently stored in the database."
 )
 def get_tasks():
-    return tasks
+    return []
 
 
 @app.get(
@@ -74,13 +104,9 @@ def get_tasks():
     description="Returns a task using its unique ID."
 )
 def get_task(task_id: int):
-    for task in tasks:
-        if task["id"] == task_id:
-            return task
-
     raise HTTPException(
         status_code=404,
-        detail=f"Task {task_id} not found"
+        detail="Task not found"
     )
 
 
@@ -97,17 +123,7 @@ def create_task(task: TaskCreate):
             detail="Title is required and cannot be empty"
         )
 
-    new_id = max(task["id"] for task in tasks) + 1
-
-    new_task = {
-        "id": new_id,
-        "title": task.title,
-        "done": False
-    }
-
-    tasks.append(new_task)
-
-    return new_task
+    return {}
 
 
 @app.put(
@@ -116,26 +132,9 @@ def create_task(task: TaskCreate):
     description="Updates the title and/or completion status of an existing task."
 )
 def update_task(task_id: int, task_update: TaskUpdate):
-    for task in tasks:
-        if task["id"] == task_id:
-
-            if task_update.title is not None:
-                if not task_update.title.strip():
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Title cannot be empty"
-                    )
-
-                task["title"] = task_update.title
-
-            if task_update.done is not None:
-                task["done"] = task_update.done
-
-            return task
-
     raise HTTPException(
         status_code=404,
-        detail=f"Task {task_id} not found"
+        detail="Task not found"
     )
 
 
@@ -146,12 +145,7 @@ def update_task(task_id: int, task_update: TaskUpdate):
     description="Deletes an existing task using its unique ID."
 )
 def delete_task(task_id: int):
-    for task in tasks:
-        if task["id"] == task_id:
-            tasks.remove(task)
-            return
-
     raise HTTPException(
         status_code=404,
-        detail=f"Task {task_id} not found"
+        detail="Task not found"
     )
