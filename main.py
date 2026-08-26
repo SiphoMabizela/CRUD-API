@@ -157,7 +157,33 @@ def create_task(task: TaskCreate):
             status_code=400,
             detail="Title is required and cannot be empty"
         )
-    return {}
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        "INSERT INTO tasks (title, done) VALUES (?, ?)",
+        (task.title.strip(), False)
+    )
+
+    task_id = cursor.lastrowid
+
+    connection.commit()
+
+    cursor.execute(
+        "SELECT * FROM tasks WHERE id = ?",
+        (task_id,)
+    )
+
+    row = cursor.fetchone()
+
+    connection.close()
+
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "done": bool(row["done"])
+    }
 
 
 @app.put(
