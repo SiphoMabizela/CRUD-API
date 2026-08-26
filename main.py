@@ -63,7 +63,7 @@ def initialize_database():
     connection.close()
 
 
-# database setup is ran whenever the application starts.
+# Database setup is run whenever the application starts.
 initialize_database()
 
 
@@ -192,10 +192,74 @@ def create_task(task: TaskCreate):
     description="Updates the title and/or completion status of an existing task."
 )
 def update_task(task_id: int, task_update: TaskUpdate):
-    raise HTTPException(
-        status_code=404,
-        detail="Task not found"
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    # Check whether the task exists.
+    cursor.execute(
+        "SELECT * FROM tasks WHERE id = ?",
+        (task_id,)
     )
+
+    row = cursor.fetchone()
+
+    if row is None:
+        connection.close()
+
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found"
+        )
+
+    # Validate the title if one was provided.
+    if task_update.title is not None and not task_update.title.strip():
+        connection.close()
+
+        raise HTTPException(
+            status_code=400,
+            detail="Title cannot be empty"
+        )
+
+    # If a field was not supplied, keep its existing value.
+    new_title = (
+        task_update.title.strip()
+        if task_update.title is not None
+        else row["title"]
+    )
+
+    new_done = (
+        task_update.done
+        if task_update.done is not None
+        else bool(row["done"])
+    )
+
+    # Update the task using parameterized SQL.
+    cursor.execute(
+        """
+        UPDATE tasks
+        SET title = ?, done = ?
+        WHERE id = ?
+        """,
+        (new_title, new_done, task_id)
+    )
+
+    connection.commit()
+
+    # Retrieve the updated task.
+    cursor.execute(
+        "SELECT * FROM tasks WHERE id = ?",
+        (task_id,)
+    )
+
+    updated_row = cursor.fetchone()
+
+    connection.close()
+
+    return {
+        "id": updated_row["id"],
+        "title": updated_row["title"],
+        "done": bool(updated_row["done"])
+    }
 
 
 @app.delete(
@@ -205,7 +269,33 @@ def update_task(task_id: int, task_update: TaskUpdate):
     description="Deletes an existing task using its unique ID."
 )
 def delete_task(task_id: int):
-    raise HTTPException(
-        status_code=404,
-        detail="Task not found"
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    # Check whether the task exists.
+    cursor.execute(
+        "SELECT * FROM tasks WHERE id = ?",
+        (task_id,)
     )
+
+    row = cursor.fetchone()
+
+    if row is None:
+        connection.close()
+
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found"
+        )
+
+    # the task will be deleted using a parameterized query.
+    cursor.execute(
+        "DELETE FROM tasks WHERE id = ?",
+        (task_id,)
+    )
+
+    connection.commit()
+    connection.close()
+
+    # 204 responses must have an empty body.
+    return None
