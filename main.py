@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 app = FastAPI(
     title="Task API",
-    description="A simple CRUD API for managing a to-do list.",
+    description="CRUD API for managing a to-do list.",
     version="1.0"
 )
 
@@ -63,7 +63,7 @@ def initialize_database():
     connection.close()
 
 
-# Run database setup when the application starts.
+# database setup is ran whenever the application starts.
 initialize_database()
 
 
@@ -92,10 +92,25 @@ def health_check():
 @app.get(
     "/tasks",
     summary="Get all tasks",
-    description="Returns all tasks currently stored in the database."
+    description="Returns all tasks stored in the SQLite database."
 )
 def get_tasks():
-    return []
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("SELECT * FROM tasks")
+    rows = cursor.fetchall()
+
+    connection.close()
+
+    return [
+        {
+            "id": row["id"],
+            "title": row["title"],
+            "done": bool(row["done"])
+        }
+        for row in rows
+    ]
 
 
 @app.get(
@@ -104,10 +119,30 @@ def get_tasks():
     description="Returns a task using its unique ID."
 )
 def get_task(task_id: int):
-    raise HTTPException(
-        status_code=404,
-        detail="Task not found"
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    # Parameterized query prevents user input from being inserted
+    # directly into the SQL statement.
+    cursor.execute(
+        "SELECT * FROM tasks WHERE id = ?",
+        (task_id,)
     )
+
+    row = cursor.fetchone()
+    connection.close()
+
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found"
+        )
+
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "done": bool(row["done"])
+    }
 
 
 @app.post(
@@ -122,7 +157,6 @@ def create_task(task: TaskCreate):
             status_code=400,
             detail="Title is required and cannot be empty"
         )
-
     return {}
 
 
