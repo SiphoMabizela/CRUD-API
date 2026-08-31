@@ -3,3 +3,4 @@
 .venv/
 tasks.db
 tasks.db-journal
+.env
